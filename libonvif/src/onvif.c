@@ -2224,6 +2224,10 @@ int getNodeAttributen (xmlDocPtr doc, xmlChar *xpath, xmlChar *attribute, char b
     xmlXPathRegisterNs(context, BAD_CAST "wsnt", BAD_CAST "http://docs.oasis-open.org/wsn/b-2");
     xmlXPathRegisterNs(context, BAD_CAST "ter", BAD_CAST "http://www.onvif.org/ver10/error");
     xmlXPathRegisterNs(context, BAD_CAST "a", BAD_CAST "http://schemas.xmlsoap.org/ws/2004/08/addressing");
+    xmlXPathRegisterNs(context, BAD_CAST "tev", BAD_CAST "http://www.onvif.org/ver10/events/wsdl");
+    xmlXPathRegisterNs(context, BAD_CAST "wstop", BAD_CAST "http://docs.oasis-open.org/wsn/t-1");
+    xmlXPathRegisterNs(context, BAD_CAST "tns1", BAD_CAST "http://www.onvif.org/ver10/topics");
+    xmlXPathRegisterNs(context, BAD_CAST "tan", BAD_CAST "http://www.onvif.org/ver20/analytics/wsdl");
 
     xmlXPathObjectPtr result = xmlXPathEvalExpression(xpath, context);
     xmlXPathFreeContext(context);
