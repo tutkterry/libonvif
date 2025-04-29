@@ -65,6 +65,7 @@ xmlDocPtr sendCommandToCamera(char * cmd, char * xaddrs);
 void getBase64(unsigned char * buffer, int chunk_size, unsigned char * result);
 void getUUID(char uuid_buf[47]);
 void addUsernameDigestHeader(xmlNodePtr root, xmlNsPtr ns_env, char * user, char * password, time_t offset);
+void addUsernameDigestHeader_ToAddr(xmlNodePtr root, xmlNsPtr ns_env, char *user, char *password, time_t offset, const char *httpaddr);
 void addHttpHeader(xmlDocPtr doc, xmlNodePtr root, char * xaddrs, char * post_type, char cmd[], int cmd_length);
 int checkForXmlErrorMsg(xmlDocPtr doc, char error_msg[1024]);
 int getXmlValue(xmlDocPtr doc, xmlChar *xpath, char buf[], int buf_length);
@@ -2561,6 +2562,89 @@ void addUsernameDigestHeader(xmlNodePtr root, xmlNsPtr ns_env, char *user, char 
     xmlNodePtr nonce = xmlNewTextChild(username_token, ns_wsse, BAD_CAST "Nonce", BAD_CAST nonce_base64);
     xmlNewProp(nonce, BAD_CAST "EncodingType", BAD_CAST "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary");
     xmlNewTextChild(username_token, ns_wsu, BAD_CAST "Created", BAD_CAST time_holder);
+}
+
+void addUsernameDigestHeader_ToAddr(xmlNodePtr root, xmlNsPtr ns_env, char *user, char *password, time_t offset, const char *httpaddr) {
+    srand (time(NULL));
+
+#ifdef _WIN32
+    _setmode(0, O_BINARY);
+#endif
+
+    unsigned int nonce_chunk_size = 20;
+    unsigned char nonce_buffer[20];
+    char nonce_base64[1024] = {0};
+    char time_holder[1024] = {0};
+    char digest_base64[1024] = {0};
+
+    for (int i=0; i<nonce_chunk_size; i++) {
+        nonce_buffer[i] = (unsigned char)rand();
+    }
+
+    unsigned char nonce_result[30];
+
+    getBase64(nonce_buffer, nonce_chunk_size, nonce_result);
+    strcpy(nonce_base64, (const char *)nonce_result);
+
+    char time_buffer[1024];
+    time_t now = time(NULL);
+    now = now + offset;
+    size_t time_buffer_length = strftime(time_buffer, 1024, "%Y-%m-%dT%H:%M:%S.", gmtime(&now));
+    time_buffer[time_buffer_length] = '\0';
+    int millisec;
+    struct timeval tv;
+#ifdef _WIN32
+    static const uint64_t EPOCH = ((uint64_t) 116444736000000000ULL);
+
+    SYSTEMTIME  system_time;
+    FILETIME    file_time;
+    uint64_t    time;
+
+    GetSystemTime( &system_time );
+    SystemTimeToFileTime( &system_time, &file_time );
+    time =  ((uint64_t)file_time.dwLowDateTime )      ;
+    time += ((uint64_t)file_time.dwHighDateTime) << 32;
+
+    tv.tv_sec  = (long) ((time - EPOCH) / 10000000L);
+    tv.tv_usec = (long) (system_time.wMilliseconds * 1000);
+#else
+    gettimeofday(&tv, NULL);
+#endif
+    millisec = tv.tv_usec/1000.0;
+    char milli_buf[16] = {0};
+    sprintf(milli_buf, "%03dZ", millisec);
+    strcat(time_buffer, milli_buf);
+
+    unsigned char hash[20];
+
+    SHA1_CTX ctx;
+    SHA1Init(&ctx);
+    SHA1Update(&ctx, nonce_buffer, nonce_chunk_size);
+    SHA1Update(&ctx, (const unsigned char *)time_buffer, strlen(time_buffer));
+    SHA1Update(&ctx, (const unsigned char *)password, strlen(password));
+    SHA1Final(hash, &ctx);
+
+    unsigned int digest_chunk_size = SHA1_DIGEST_SIZE;
+    unsigned char digest_result[128];
+    getBase64(hash, digest_chunk_size, digest_result);
+
+    strcpy(time_holder, time_buffer);
+    strcpy(digest_base64, (const char *)digest_result);
+
+    xmlNsPtr ns_wsse = xmlNewNs(root, BAD_CAST "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd", BAD_CAST "wsse");
+    xmlNsPtr ns_wsu = xmlNewNs(root, BAD_CAST "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd", BAD_CAST "wsu");
+    xmlNsPtr ns_wsa = xmlNewNs(root, BAD_CAST "http://www.w3.org/2005/08/addressing", BAD_CAST "wsa");
+    xmlNodePtr header = xmlNewTextChild(root, ns_env, BAD_CAST "Header", NULL);
+    xmlNodePtr security = xmlNewTextChild(header, ns_wsse, BAD_CAST "Security", NULL);
+    xmlNewProp(security, BAD_CAST "SOAP-ENV:mustUnderstand", BAD_CAST "1");
+    xmlNodePtr username_token = xmlNewTextChild(security, ns_wsse, BAD_CAST "UsernameToken", NULL);
+    xmlNewTextChild(username_token, ns_wsse, BAD_CAST "Username", BAD_CAST user);
+    xmlNodePtr pwd = xmlNewTextChild(username_token, ns_wsse, BAD_CAST "Password", BAD_CAST digest_base64);
+    xmlNewProp(pwd, BAD_CAST "Type", BAD_CAST "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest");
+    xmlNodePtr nonce = xmlNewTextChild(username_token, ns_wsse, BAD_CAST "Nonce", BAD_CAST nonce_base64);
+    xmlNewProp(nonce, BAD_CAST "EncodingType", BAD_CAST "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary");
+    xmlNewTextChild(username_token, ns_wsu, BAD_CAST "Created", BAD_CAST time_holder);
+    xmlNewTextChild(header, ns_wsa, BAD_CAST "To", BAD_CAST httpaddr);
 }
 
 void getBase64(unsigned char * buffer, int chunk_size, unsigned char * result) {
